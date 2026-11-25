@@ -76,8 +76,8 @@ label.f{display:block;font-size:14px;color:var(--mute);margin:10px 0 4px}
 .live-tx em{color:var(--mute);font-style:normal}
 .check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--mute);margin-top:10px}
 .check input{width:18px;height:18px;accent-color:var(--tape);margin:0}
-details.alt-up{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
-details.alt-up summary{cursor:pointer;color:var(--mute);font-size:14px}
+.alt-up{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+
 audio{width:100%;margin-top:10px}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th,td{text-align:start;padding:8px 6px;border-bottom:1px solid var(--line);font-size:15px;vertical-align:top}
@@ -180,11 +180,11 @@ ul.q li{margin:4px 0}
       <p class="status" id="recStatus"></p>
       <audio id="player" controls hidden></audio>
 
-      <details class="alt-up">
-        <summary>ההקלטה בדף לא עובדת? העלו קובץ מהטלפון</summary>
-        <p class="hint">הקליטו בתזכיר קול בטלפון והעלו כאן (m4a, mp3, wav).</p>
+      <div class="alt-up">
+        <h3>או: הקלטה בטלפון והעלאה</h3>
+        <p class="hint">הדרך שעובדת תמיד, וגם נותנת את ניתוח הקול המלא: מקליטים בתזכיר קול (או ווטסאפ לעצמכם), ומעלים כאן קובץ m4a, mp3 או wav.</p>
         <input type="file" id="myFile" accept="audio/*">
-      </details>
+      </div>
     </div>
 
     <div class="card">
@@ -535,6 +535,7 @@ ul.q li{margin:4px 0}
   }
 
   /* ---------- recording ---------- */
+  var dictNoLang = false;
   var rec = {on:false, stream:null, mr:null, chunks:[], t0:0, raf:null, actx:null, analyser:null, dictOn:false, finals:[], partial:'', mime:''};
   function setLive(on){ $('lamp').classList.toggle('live', on); $('recBtn').classList.toggle('on', on); $('recBtn').setAttribute('aria-label', on ? 'עצור הקלטה' : 'התחל הקלטה'); }
   function drawLive(){
@@ -568,14 +569,15 @@ ul.q li{margin:4px 0}
     /* dictation must start synchronously inside the click */
     var dictP = null;
     if(DICT && $('useDict').checked){
-      dictP = DICT.start({language:'he'});
+      dictP = dictNoLang ? DICT.start() : DICT.start({language:'he'});
       rec.dictOn = true;
       dictP.catch(function(e){
         rec.dictOn = false;
         var c = e && e.code;
         if(c==='not_granted') setStatus($('recStatus'), 'התמלול לא אושר, ממשיכים בלי תמלול.');
-        else if(c==='unavailable') setStatus($('recStatus'), 'התמלול לא זמין בעברית כאן, ממשיכים בלי תמלול.');
-        else if(c!=='stopped') setStatus($('recStatus'), 'התמלול לא הופעל, ממשיכים בלי תמלול.');
+        else if(c==='unavailable' && !dictNoLang){ dictNoLang = true; setStatus($('recStatus'), 'התמלול בעברית נדחה. בהקלטה הבאה ננסה בשפת ברירת המחדל של החשבון.'); }
+        else if(c==='unavailable') setStatus($('recStatus'), 'התמלול לא זמין לחשבון הזה. ממשיכים בלי תמלול.');
+        else if(c!=='stopped') setStatus($('recStatus'), 'התמלול לא הופעל (' + (c||'שגיאה') + '). ממשיכים בלי תמלול.');
       });
     }
     rec.on = true; rec.t0 = performance.now(); setLive(true); drawLive();
@@ -595,14 +597,19 @@ ul.q li{margin:4px 0}
         rec.actx = new Ctx(); rec.analyser = rec.actx.createAnalyser(); rec.analyser.fftSize = 1024;
         rec.actx.createMediaStreamSource(stream).connect(rec.analyser);
       }catch(e){ rec.analyser = null; }
-    }).catch(function(){ micFailed(); });
+    }).catch(function(e){ micFailed(e); });
   });
-  function micFailed(){
+  function micFailed(e){
+    var name = (e && e.name) || 'NoRecorder';
+    var why = (name==='NotAllowedError' || name==='SecurityError')
+      ? 'claude.ai לא מעביר לדף גישה ישירה למיקרופון'
+      : (name==='NotFoundError') ? 'לא נמצא מיקרופון במכשיר'
+      : 'הדפדפן לא תומך בהקלטה כאן';
     if(rec.dictOn){
-      setStatus($('recStatus'), 'הדפדפן לא נותן לדף להקליט קול, אבל התמלול פועל. נמדוד קצב ודיוק לפי התמלול. לניתוח קול מלא, העלו קובץ מהטלפון.');
+      setStatus($('recStatus'), why + ' (' + name + '), אבל התמלול פועל: נמדוד קצב ודיוק לפי התמלול. לניתוח קול מלא, העלו קובץ מהטלפון.');
     } else {
       rec.on = false; setLive(false); cancelAnimationFrame(rec.raf);
-      setStatus($('recStatus'), 'הדפדפן לא מאפשר הקלטה בדף הזה. אשרו גישה למיקרופון, או פתחו בכרום במחשב, או העלו קובץ מהטלפון למטה.', true);
+      setStatus($('recStatus'), why + ' (' + name + '). הקליטו בטלפון והעלו את הקובץ למטה.', true);
     }
   }
   async function stopRec(){
@@ -979,7 +986,10 @@ ul.q li{margin:4px 0}
       DICT.onFinal(function(e){ if(!rec.on && !rec.dictOn) return; rec.finals.push({t:(performance.now()-rec.t0)/1000, text: String(e.text||'')}); renderLiveTx(); });
       DICT.onPartial(function(e){ rec.partial = String(e.text||''); renderLiveTx(); });
       DICT.onState(function(e){ if(e.state==='idle') rec.dictOn = false; });
-    } else { cd.textContent = 'תמלול: לא זמין כאן'; cd.className = 'chip off'; }
+    } else {
+      cd.textContent = 'תמלול: לא זמין כאן'; cd.className = 'chip off';
+      cd.title = 'התמלול עובד רק בכרום או Edge במחשב או באפליקציית Claude במחשב, ורק למי שבארגון של בעל הדף.';
+    }
     $('aiRead').disabled = !aiAvailable(); $('aiIntro').disabled = !aiAvailable();
     $('anBtn').disabled = !SAMPLE; $('genIntro').disabled = !SAMPLE;
     if(DB && USER){
