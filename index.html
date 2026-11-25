@@ -125,6 +125,17 @@ ul.q li{margin:4px 0}
   h1{font-size:25px}
   .score{grid-template-columns:96px 1fr 30px}
 }
+.drill-stage{border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:14px;margin-top:12px;min-height:150px}
+.drill-tag{margin:0 0 6px;font-size:12px;color:var(--mute);letter-spacing:.04em}
+.drill-text{font-size:20px;line-height:1.75;margin:0}
+.flash{margin-top:12px;border:2px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:19px;line-height:1.7;background:var(--card);animation:pop .35s ease-out}
+.flash b{display:inline-block;background:var(--accent);color:var(--accent-ink);font-size:13px;padding:1px 8px;border-radius:999px;margin-inline-end:8px;vertical-align:middle}
+@keyframes pop{from{transform:scale(.96);opacity:.2}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}}
+mark{border-radius:4px;padding:0 3px;color:inherit}
+mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} mark.l{background:rgba(169,106,7,.22)} mark.s{background:rgba(86,103,114,.25)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px;font-size:13px}
+.legend mark{padding:2px 8px}
 .linkbtn{text-decoration:none;display:inline-flex;align-items:center}
 </style>
 </head>
@@ -144,7 +155,7 @@ ul.q li{margin:4px 0}
       <li>כתבו את השם שלכם. אם אתם באותו חדר עם אחרים, שימו אוזניות או התרחקו קצת.</li>
       <li>לוחצים על העיגול האדום, מאשרים מיקרופון, קוראים את הפסקה, ולוחצים שוב לסיום.</li>
       <li>לוחצים "העתק ל-Claude", פותחים את אפליקציית Claude, מדביקים ושולחים.</li>
-      <li>מקליטים שוב עם התיקונים, ובסוף ממלאים פידבק בלשונית 3.</li>
+      <li>מקליטים שוב עם התיקונים. אחר כך מנסים את המבזק המתעדכן ואת בדיקת ההגייה, ובסוף ממלאים פידבק בלשונית 5.</li>
     </ol>
     <label class="f" for="myName">השם שלך</label>
     <input type="text" id="myName" autocomplete="name" placeholder="למשל: דנה">
@@ -152,8 +163,10 @@ ul.q li{margin:4px 0}
 
   <nav class="tabs" role="tablist" aria-label="תחנות">
     <button role="tab" aria-selected="true" data-tab="practice"><b>1</b>הקלטה וניתוח</button>
-    <button role="tab" aria-selected="false" data-tab="song"><b>2</b>הקדמה לשיר</button>
-    <button role="tab" aria-selected="false" data-tab="feedback"><b>3</b>פידבק</button>
+    <button role="tab" aria-selected="false" data-tab="drill"><b>2</b>מבזק מתעדכן</button>
+    <button role="tab" aria-selected="false" data-tab="pron"><b>3</b>הגייה</button>
+    <button role="tab" aria-selected="false" data-tab="song"><b>4</b>הקדמה לשיר</button>
+    <button role="tab" aria-selected="false" data-tab="feedback"><b>5</b>פידבק</button>
   </nav>
 
   <!-- TAB 1 -->
@@ -212,6 +225,86 @@ ul.q li{margin:4px 0}
     <div class="card">
       <h3>הניסיונות שלך</h3>
       <div class="scroll"><table><thead><tr><th>#</th><th>משך</th><th>מילים לדקה</th><th>הפסקות</th><th>מנגינה</th><th>דינמיקה</th></tr></thead><tbody id="takesBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- DRILL -->
+  <section id="tab-drill" role="tabpanel" hidden>
+    <div class="card">
+      <h2>מבזק מתעדכן</h2>
+      <p class="hint">קוראים ידיעה שלא ראיתם קודם. באמצע הקריאה קופץ עדכון, וצריך לשלב אותו באוויר בלי לעצור, למשל "ועדכון שהגיע אלינו ממש עכשיו". כל הידיעות כאן מומצאות לתרגול.</p>
+      <div class="row">
+        <div style="flex:1 1 220px"><label class="f" for="drillSel" style="margin-top:0">ידיעה</label><select id="drillSel"></select></div>
+        <div style="flex:1 1 160px"><label class="f" for="drillWhen" style="margin-top:0">מתי יקפוץ העדכון</label>
+          <select id="drillWhen"><option value="mid">באמצע הקריאה (אקראי)</option><option value="end">לקראת הסוף</option><option value="early">כמעט מיד</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="drillRec" checked> להקליט את התרגיל (בשביל מדידה ומשוב)</label>
+
+      <div class="drill-stage" id="drillStage">
+        <p class="drill-tag" id="drillTag">ידיעת תרגול</p>
+        <p class="drill-text" id="drillItem">לחצו על העיגול האדום כדי להתחיל. הידיעה תופיע רק אז, כמו באולפן.</p>
+        <div class="flash" id="drillUpdate" hidden><b>עדכון</b><span id="drillUpdText"></span></div>
+      </div>
+      <div class="recbox">
+        <button class="recbtn" id="drillBtn" aria-label="התחל תרגיל"><span></span></button>
+        <div class="recinfo">
+          <div class="clock" id="drillClock">0.0</div>
+          <div class="meter" aria-hidden="true"><i id="drillMeter"></i></div>
+        </div>
+      </div>
+      <p class="status" id="drillStatus"></p>
+    </div>
+
+    <div class="card" id="drillResult" hidden>
+      <h3>איך הלך</h3>
+      <ul class="q" id="drillFacts"></ul>
+      <audio id="drillPlayer" controls playsinline hidden></audio>
+      <label class="f" for="drillSaid">מה אמרתם בדיוק כשהעדכון הגיע? (אופציונלי, עוזר ל-Claude)</label>
+      <input type="text" id="drillSaid" placeholder="למשל: ו... רגע, עדכון שהגיע אלינו עכשיו">
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="drillCopy">העתק ל-Claude: משוב על התרגיל</button>
+        <a class="btn alt linkbtn" href="https://claude.ai/new" target="_blank" rel="noopener">פתח את Claude</a>
+        <button class="btn alt" id="drillNext">ידיעה הבאה</button>
+      </div>
+      <p class="status" id="drillCopyStatus"></p>
+    </div>
+
+    <div class="card">
+      <details>
+        <summary style="cursor:pointer;font-weight:500">עוד ידיעות לתרגול, מ-Claude</summary>
+        <p class="hint">מעתיקים בקשה, מדביקים ב-Claude, ואת התשובה מדביקים כאן. Claude יכתוב ידיעות מומצאות בפורמט שהדף מבין.</p>
+        <button class="btn alt" id="drillGenCopy">העתק בקשה ל-Claude</button>
+        <label class="f" for="drillPaste">הדביקו כאן את התשובה</label>
+        <textarea id="drillPaste" style="min-height:90px" placeholder="ידיעה: ...&#10;עדכון: ..."></textarea>
+        <div class="row" style="margin-top:8px"><button class="btn" id="drillLoad">טען ידיעות</button></div>
+        <p class="status" id="drillGenStatus"></p>
+      </details>
+    </div>
+  </section>
+
+  <!-- PRONUNCIATION -->
+  <section id="tab-pron" role="tabpanel" hidden>
+    <div class="card">
+      <h2>הגייה ומלכודות</h2>
+      <p class="hint">מדביקים מהדורה או ידיעה. הדף מסמן מיד מספרים, ראשי תיבות, מילים לועזיות וסימנים. Claude מכין גרסה לקריאה: מספרים במילים ובמין הנכון, ניקוד על מילים בעייתיות, והטעמה של שמות.</p>
+      <label class="f" for="pronText">הטקסט</label>
+      <textarea id="pronText" style="min-height:130px"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn alt" id="pronScan">בדיקה מהירה</button>
+        <button class="btn" id="pronCopy">העתק ל-Claude: הכן לקריאה</button>
+        <a class="btn alt linkbtn" href="https://claude.ai/new" target="_blank" rel="noopener">פתח את Claude</a>
+      </div>
+      <p class="status" id="pronStatus"></p>
+      <div id="pronOut" hidden>
+        <div class="legend" id="pronLegend"></div>
+        <div class="diff" id="pronMarked"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>אחרי ש-Claude הכין</h3>
+      <p class="hint">הדביקו כאן את הגרסה המוכנה לקריאה, ותתאמנו עליה עם הקלטה וניתוח. בכל ספק, בודקים מול מקור מוסמך (למשל האקדמיה ללשון העברית).</p>
+      <textarea id="pronBack" style="min-height:100px"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn" id="pronPractice">קראו והקליטו את זה</button></div>
     </div>
   </section>
 
@@ -348,7 +441,9 @@ ul.q li{margin:4px 0}
     b.addEventListener('click', function(){
       stopAll();
       Array.prototype.forEach.call(document.querySelectorAll('nav.tabs button'), function(x){ x.setAttribute('aria-selected', x===b ? 'true':'false'); });
-      ['practice','song','feedback'].forEach(function(t){ $('tab-'+t).hidden = (t !== b.dataset.tab); });
+      if(rec.on) recStop();
+      if(drill.running && !rec.on){ drill.running = false; cancelAnimationFrame(drill.raf); setDrillBtn(false); }
+      Array.prototype.forEach.call(document.querySelectorAll('section[role=tabpanel]'), function(sec){ sec.hidden = (sec.id !== 'tab-'+b.dataset.tab); });
       if(b.dataset.tab==='feedback') refreshShare();
     });
   });
@@ -439,6 +534,7 @@ ul.q li{margin:4px 0}
       f0: isFinite(med) ? med : null,
       pitchRange: stAll.length>10 ? pct(stAll,0.9)-pct(stAll,0.1) : null,
       pitchStd: stAll.length>10 ? std(stAll) : null,
+      lead: first*step,
       pauses: pauses, phrases: phrases
     };
   }
@@ -481,12 +577,18 @@ ul.q li{margin:4px 0}
   }
 
   /* ---------- recording (raw PCM, works in iPhone Safari) ---------- */
-  var rec = {on:false, stream:null, ctx:null, src:null, proc:null, chunks:[], sr:44100, t0:0, raf:null, level:0};
-  function setLive(on){ $('lamp').classList.toggle('live', on); $('recBtn').classList.toggle('on', on); $('recBtn').setAttribute('aria-label', on ? 'עצור הקלטה' : 'התחל הקלטה'); }
+  var rec = {on:false, stream:null, ctx:null, src:null, proc:null, chunks:[], sr:44100, t0:0, raf:null, level:0, ui:null, onStop:null};
+  function setLive(on){
+    $('lamp').classList.toggle('live', on);
+    var b = rec.ui && rec.ui.btn; if(!b) return;
+    b.classList.toggle('on', on); b.setAttribute('aria-label', on ? 'עצור הקלטה' : 'התחל הקלטה');
+  }
   function drawLive(){
     if(!rec.on) return;
-    $('clock').textContent = fmt((performance.now()-rec.t0)/1000);
-    $('meterFill').style.width = Math.min(100, rec.level*350) + '%';
+    var u = rec.ui;
+    if(u.clock) u.clock.textContent = fmt((performance.now()-rec.t0)/1000);
+    if(u.meter) u.meter.style.width = Math.min(100, rec.level*350) + '%';
+    if(u.onTick) u.onTick((performance.now()-rec.t0)/1000);
     rec.raf = requestAnimationFrame(drawLive);
   }
   function cleanupRec(){
@@ -496,19 +598,19 @@ ul.q li{margin:4px 0}
     if(rec.ctx){ try{ rec.ctx.close(); }catch(e){} }
     rec.stream = rec.ctx = rec.src = rec.proc = null;
   }
-  $('recBtn').addEventListener('click', function(){
-    if(rec.on){ stopRec(); return; }
+  /* ui: {btn, clock, meter, status, onStart, onTick}; onStop(pcm, sr) */
+  function recStart(ui, onStop){
     stopAll();
-    setStatus($('recStatus'), '');
+    setStatus(ui.status, '');
     var md = navigator.mediaDevices;
     var Ctx = window.AudioContext || window.webkitAudioContext;
     if(!md || !md.getUserMedia || !Ctx){
-      setStatus($('recStatus'), 'הדפדפן הזה לא מאפשר הקלטה. פתחו את הקישור בספארי או בכרום, או העלו קובץ.', true); return;
+      setStatus(ui.status, 'הדפדפן הזה לא מאפשר הקלטה. פתחו את הקישור בספארי או בכרום.', true); return;
     }
     /* create the audio context inside the tap so iOS lets it run */
     var ctx = new Ctx();
-    rec.ctx = ctx; rec.chunks = []; rec.level = 0;
-    $('recBtn').disabled = true;
+    rec.ctx = ctx; rec.chunks = []; rec.level = 0; rec.ui = ui; rec.onStop = onStop;
+    ui.btn.disabled = true;
     md.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}}).then(function(stream){
       rec.stream = stream;
       return (ctx.state === 'suspended' && ctx.resume) ? ctx.resume() : null;
@@ -525,29 +627,41 @@ ul.q li{margin:4px 0}
       rec.src.connect(rec.proc);
       var mute = ctx.createGain(); mute.gain.value = 0;
       rec.proc.connect(mute); mute.connect(ctx.destination);
-      rec.on = true; rec.t0 = performance.now(); setLive(true); drawLive();
-      $('recBtn').disabled = false;
+      rec.on = true; rec.t0 = performance.now(); setLive(true);
+      ui.btn.disabled = false;
+      if(ui.onStart) ui.onStart();
+      drawLive();
     }).catch(function(e){
-      cleanupRec(); $('recBtn').disabled = false;
+      cleanupRec(); ui.btn.disabled = false;
       var name = (e && e.name) || '';
       var msg = (name==='NotAllowedError') ? 'לא ניתנה גישה למיקרופון. באייפון: הגדרות ← ספארי ← מיקרופון ← "שאל" או "אפשר", ואז רעננו ונסו שוב.'
               : (name==='NotFoundError') ? 'לא נמצא מיקרופון במכשיר.'
-              : 'לא הצלחתי להתחיל הקלטה (' + (name||'שגיאה') + '). נסו לרענן, או העלו קובץ.';
-      setStatus($('recStatus'), msg, true);
+              : 'לא הצלחתי להתחיל הקלטה (' + (name||'שגיאה') + '). נסו לרענן.';
+      setStatus(ui.status, msg, true);
     });
-  });
-  async function stopRec(){
-    rec.on = false; setLive(false); cancelAnimationFrame(rec.raf); $('meterFill').style.width = '0';
+  }
+  async function recStop(){
+    if(!rec.on) return;
+    rec.on = false; setLive(false); cancelAnimationFrame(rec.raf);
+    var u = rec.ui, cb = rec.onStop;
+    if(u.meter) u.meter.style.width = '0';
     var sr = rec.sr, chunks = rec.chunks; rec.chunks = [];
     cleanupRec();
     var len = chunks.reduce(function(a,c){ return a + c.length; }, 0);
     var pcm = new Float32Array(len), off = 0;
     chunks.forEach(function(c){ pcm.set(c, off); off += c.length; });
-    $('player').src = URL.createObjectURL(toWav(pcm, sr)); $('player').hidden = false;
-    setStatus($('recStatus'), 'מנתח…');
+    setStatus(u.status, 'מנתח…');
     await new Promise(function(r){ setTimeout(r, 30); });
-    finishTake(pcm, sr);
+    if(cb) cb(pcm, sr);
   }
+  var practiceUI = {btn: $('recBtn'), clock: $('clock'), meter: $('meterFill'), status: $('recStatus')};
+  $('recBtn').addEventListener('click', function(){
+    if(rec.on){ if(rec.ui === practiceUI) recStop(); return; }
+    recStart(practiceUI, function(pcm, sr){
+      $('player').src = URL.createObjectURL(toWav(pcm, sr)); $('player').hidden = false;
+      finishTake(pcm, sr);
+    });
+  });
   function toWav(pcm, sr){
     var buf = new ArrayBuffer(44 + pcm.length*2), v = new DataView(buf);
     function w(o, s){ for(var i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); }
@@ -733,6 +847,217 @@ ul.q li{margin:4px 0}
     setStatus($('genStatus'), ok ? 'הועתק. הדביקו ב-Claude, ואת ההקדמה שבחרתם הדביקו למטה ותתאמנו מול השעון.' : 'ההעתקה נחסמה. נסו שוב.', !ok);
   });
 
+  /* ---------- drill: updating bulletin ---------- */
+  var DRILLS = [
+    {title:'שריפה ליד בית שמש', item:'שריפת חורש פרצה הבוקר סמוך לבית שמש. שמונה צוותי כיבוי והצלה פועלים במקום, ושני מטוסי כיבוי בדרך. כביש שלושים ושמונה נחסם לתנועה בשני הכיוונים, והמשטרה מבקשת מהנהגים להשתמש בדרכים חלופיות.', update:'כבאות והצלה מודיעים שהשריפה התפשטה לעבר שכונת מגורים, ותושבי שלושה רחובות מתבקשים להתפנות.'},
+    {title:'שיבושים ברכבת', item:'רכבת ישראל מודיעה על שיבושים בקו החוף בעקבות תקלה טכנית באזור חדרה. הרכבות בין חיפה לתל אביב מתעכבות בכעשרים דקות, והנוסעים מתבקשים להתעדכן באפליקציה לפני היציאה.', update:'התקלה תוקנה, אבל לפי הרכבת העיכובים צפויים להימשך עד שעות הצהריים.'},
+    {title:'סערה חורפית', item:'סערה חורפית נכנסת הערב לאזורנו. צפויים גשמים עזים בצפון ובמרכז, סופות רעמים, ורוחות חזקות במישור החוף. הטמפרטורות ירדו בארבע עד שש מעלות לעומת אתמול.', update:'השירות המטאורולוגי מוציא אזהרה מפני שיטפונות בנחלי הנגב ומדבר יהודה, וממליץ להימנע מטיולים באזור עד מחר בערב.'},
+    {title:'תוצאת משחק (תיקון)', item:'בכדורגל: הקבוצה מחיפה ניצחה אמש את הקבוצה מבאר שבע, שתיים אחת, במשחק צמוד באצטדיון סמי עופר. שני השערים של המנצחת הגיעו במחצית השנייה.', update:'תיקון: התוצאה הסופית היא שתיים שתיים. שער השוויון של באר שבע הובקע בדקה התשעים ושלוש.'},
+    {title:'הפסקת חשמל בשרון', item:'הפסקת חשמל רחבה נרשמת בשעה האחרונה באזור השרון. לפי חברת החשמל, כשלושים אלף בתים מנותקים, והצוותים פועלים לאתר את מקור התקלה.', update:'חברת החשמל מעדכנת: מספר הבתים המנותקים ירד לכעשרת אלפים, והחזרת האספקה המלאה צפויה בתוך שעתיים.'},
+    {title:'הופעה בפארק הירקון', item:'ההופעה הגדולה בפארק הירקון, שתוכננה להערב, תתקיים כמתוכנן למרות תחזית הגשם. השערים ייפתחו בשבע, והמארגנים ממליצים להגיע בתחבורה ציבורית.', update:'בעקבות התחזית, ההופעה נדחתה למוצאי שבת. הכרטיסים יכובדו בתאריך החדש.'}
+  ];
+  var drill = {cur:null, t0:0, updAt:null, T:0, running:false, raf:null, results:[], last:null};
+  function renderDrillSel(keep){
+    var sel = $('drillSel'), v = keep ? sel.value : null; sel.textContent = '';
+    DRILLS.forEach(function(d, i){ var o = el('option', null, d.title); o.value = String(i); sel.appendChild(o); });
+    var o2 = el('option', null, 'אקראי'); o2.value = 'rand'; sel.appendChild(o2);
+    sel.value = (v && sel.querySelector('option[value="'+v+'"]')) ? v : 'rand';
+  }
+  renderDrillSel();
+  function pickDrill(){
+    var v = $('drillSel').value;
+    if(v === 'rand'){
+      var pool = DRILLS.map(function(_, i){ return i; }).filter(function(i){ return DRILLS[i] !== drill.cur; });
+      return DRILLS[pool[Math.floor(Math.random()*pool.length)]];
+    }
+    return DRILLS[Number(v)];
+  }
+  function drillTick(t){
+    $('drillClock').textContent = fmt(t);
+    if(drill.updAt == null && t >= drill.T){
+      drill.updAt = t;
+      $('drillUpdText').textContent = drill.cur.update;
+      $('drillUpdate').hidden = false;
+    }
+  }
+  function drillLoop(){
+    if(!drill.running || rec.on) return;
+    drillTick((performance.now()-drill.t0)/1000);
+    drill.raf = requestAnimationFrame(drillLoop);
+  }
+  function drillBegin(){
+    var d = drill.cur, est = words(d.item)/(curWpm()/60), w = $('drillWhen').value;
+    var lo = w==='early' ? 0.12 : w==='end' ? 0.75 : 0.3, hi = w==='early' ? 0.22 : w==='end' ? 0.88 : 0.65;
+    drill.T = Math.max(1.5, est*(lo + Math.random()*(hi-lo)));
+    drill.updAt = null; drill.running = true; drill.t0 = performance.now();
+    $('drillTag').textContent = 'ידיעת תרגול מומצאת · ' + d.title;
+    $('drillItem').textContent = d.item;
+    $('drillUpdate').hidden = true;
+    $('drillResult').hidden = true;
+  }
+  var drillUI = {btn: $('drillBtn'), clock: null, meter: $('drillMeter'), status: $('drillStatus'),
+    onStart: drillBegin, onTick: function(t){ drillTick(t); }};
+  function setDrillBtn(on){ $('drillBtn').classList.toggle('on', on); $('drillBtn').setAttribute('aria-label', on ? 'סיים תרגיל' : 'התחל תרגיל'); $('lamp').classList.toggle('live', on); }
+  $('drillBtn').addEventListener('click', function(){
+    if(drill.running){
+      if(rec.on && rec.ui === drillUI){ recStop(); }
+      else { drill.running = false; cancelAnimationFrame(drill.raf); setDrillBtn(false); drillDone(null, 0, (performance.now()-drill.t0)/1000); }
+      return;
+    }
+    if(rec.on) return;
+    drill.cur = pickDrill();
+    $('drillSaid').value = '';
+    if($('drillRec').checked){
+      recStart(drillUI, function(pcm, sr){
+        var total = pcm.length/sr;
+        drill.running = false;
+        $('drillPlayer').src = URL.createObjectURL(toWav(pcm, sr)); $('drillPlayer').hidden = false;
+        drillDone(pcm, sr, total);
+      });
+    } else {
+      stopAll(); setStatus($('drillStatus'), '');
+      drillBegin(); setDrillBtn(true); drillLoop();
+    }
+  });
+  function drillDone(pcm, sr, total){
+    var d = drill.cur, r = {title: d.title, item: d.item, update: d.update, updAt: drill.updAt, total: total, metrics: null};
+    if(pcm){
+      try{ r.metrics = analyzePCM(pcm, sr, words(d.item) + (drill.updAt!=null ? words(d.update) : 0)); }catch(e){ r.metrics = null; }
+    } else { $('drillPlayer').hidden = true; }
+    var ul = $('drillFacts'); ul.textContent = '';
+    function li(t){ ul.appendChild(el('li', null, t)); }
+    if(r.updAt == null){
+      li('סיימתם לפני שהעדכון הגיע (' + fmt(total) + ' ש׳). נסו שוב עם "כמעט מיד" או קראו בקצב רגוע יותר.');
+    } else {
+      li('העדכון הופיע אחרי ' + fmt(r.updAt) + ' שניות.');
+      var m = r.metrics;
+      if(m){
+        var at = r.updAt - m.lead;
+        r.wordAt = Math.max(0, Math.min(words(d.item), Math.round(at * m.wpm/60)));
+        var near = m.pauses.filter(function(p){ return p.at + p.len >= at && p.at <= at + 4; });
+        r.react = near.length ? near[0] : null;
+        li('בערך כאן הייתם בטקסט: "…' + (d.item.match(/\S+/g)||[]).slice(Math.max(0, r.wordAt-3), r.wordAt+1).join(' ') + '…"');
+        li(r.react ? ('אחרי שהעדכון הופיע הייתה שתיקה של ' + fmt(r.react.len) + ' ש׳. ' + (r.react.len > 1.2 ? 'זה נשמע באוויר כהיסוס. נסו משפט גישור קבוע מראש.' : 'שתיקה קצרה, זה בסדר.'))
+                   : 'לא הייתה שתיקה בולטת אחרי העדכון, שילבתם אותו ברצף.');
+        li('אחרי העדכון דיברתם עוד ' + fmt(Math.max(0, m.dur - at)) + ' ש׳. קצב כולל: ' + fmt(m.wpm,0) + ' מילים לדקה.');
+      } else if(pcm){
+        li('לא הצלחתי למדוד את ההקלטה. בדקו שהמיקרופון לא חסום.');
+      }
+    }
+    drill.last = r; drill.results.push(r);
+    setStatus($('drillStatus'), '');
+    $('drillResult').hidden = false;
+    $('drillResult').scrollIntoView({behavior:'smooth', block:'nearest'});
+    refreshShare();
+  }
+  $('drillNext').addEventListener('click', function(){
+    $('drillResult').hidden = true; $('drillUpdate').hidden = true;
+    $('drillItem').textContent = 'לחצו על העיגול האדום לידיעה הבאה.'; $('drillTag').textContent = 'ידיעת תרגול';
+    $('drillClock').textContent = '0.0';
+    $('drillStage').scrollIntoView({behavior:'smooth', block:'center'});
+  });
+  $('drillCopy').addEventListener('click', async function(){
+    var r = drill.last; if(!r) return;
+    var m = r.metrics, L = [
+      'אתה מאמן קריינות חדשות ותיק ברדיו בישראל. הקריין שלי מתאמן על "מבזק מתעדכן": הוא קורא ידיעה, ובאמצע הקריאה מופיע לו עדכון שצריך לשלב באוויר בלי לעצור.',
+      'זו ידיעת תרגול מומצאת. לא שמעת את הקול, יש לך רק את הטקסט ומדידה אקוסטית.',
+      '', 'הידיעה:\n' + r.item, '', 'העדכון שהופיע:\n' + r.update, ''];
+    if(r.updAt == null) L.push('הקריין סיים לקרוא לפני שהעדכון הופיע (' + fmt(r.total) + ' שניות).');
+    else {
+      L.push('העדכון הופיע אחרי ' + fmt(r.updAt) + ' שניות מתחילת ההקלטה.');
+      if(m){
+        L.push('לפי הקצב, הקריין היה בערך אחרי המילה מספר ' + r.wordAt + ' בידיעה.');
+        L.push('שתיקה אחרי הופעת העדכון: ' + (r.react ? fmt(r.react.len) + ' שניות' : 'לא הייתה שתיקה מעל 0.35 שניות'));
+        L.push('קצב כולל: ' + fmt(m.wpm,0) + ' מילים לדקה. הפסקות (at = שניות מתחילת הדיבור, len = אורך): ' + m.pauses.map(function(p){ return 'at ' + p.at + ' len ' + p.len; }).join('; '));
+        L.push('קטעי דיבור (start, dur, endMove = תנועת גובה בסוף הקטע בחצאי טונים, שלילי = ירידה): ' + m.phrases.map(function(p){ return '[' + p.start + ', ' + p.dur + ', ' + p.endMove + ']'; }).join(' '));
+      }
+    }
+    var said = $('drillSaid').value.trim();
+    if(said) L.push('לדברי הקריין, כשהעדכון הגיע הוא אמר: "' + said + '"');
+    L.push('', 'כתוב בעברית, קצר וישיר, מתאים לקריאה בטלפון:',
+      '1. איך הוא התמודד, לפי הנתונים (היסוס, עצירה באמצע משפט, האם סיים את המשפט לפני שעבר לעדכון).',
+      '2. שלוש דרכים מקובלות ברדיו לשלב עדכון כזה, כמשפטי גישור קצרים (למשל "ועדכון שהגיע אלינו ממש עכשיו").',
+      '3. איך היית אתה קורא את כל המבזק, כולל המעבר לעדכון, בנוסח מוכן לקריאה.',
+      '4. טיפ אחד לפעם הבאה.');
+    var ok = await copyText(L.join('\n'));
+    setStatus($('drillCopyStatus'), ok ? 'הועתק. פתחו את Claude, הדביקו ושלחו.' : 'ההעתקה נחסמה. נסו שוב.', !ok);
+  });
+  $('drillGenCopy').addEventListener('click', async function(){
+    var p = ['כתוב 5 ידיעות חדשות מומצאות לתרגול קריינים מתחילים ברדיו בישראל, כל אחת 35 עד 55 מילים, בעברית מדוברת לקריאה ברדיו (מספרים במילים).',
+      'נושאים מגוונים ויומיומיים: תחבורה, מזג אוויר, צרכנות, ספורט, תרבות, עירייה. בלי אנשים אמיתיים, בלי ביטחון ובלי פוליטיקה.',
+      'לכל ידיעה כתוב עדכון קצר (15 עד 25 מילים) שמשנה משהו: החמרה, ביטול, תיקון מספר, או פרט חדש.',
+      'החזר רק בפורמט הזה, בלי שום דבר אחר:',
+      'כותרת: ...', 'ידיעה: ...', 'עדכון: ...', '(שורה ריקה בין ידיעות)'].join('\n');
+    var ok = await copyText(p);
+    setStatus($('drillGenStatus'), ok ? 'הועתק. הדביקו ב-Claude, ואת התשובה הדביקו בשדה למטה.' : 'ההעתקה נחסמה.', !ok);
+  });
+  $('drillLoad').addEventListener('click', function(){
+    var txt = $('drillPaste').value, added = 0, cur = {};
+    txt.split(/\n/).forEach(function(line){
+      var mm = line.replace(/[*#]/g,'').trim().match(/^(כותרת|ידיעה|עדכון)\s*[:：]\s*(.+)$/);
+      if(!mm) return;
+      if(mm[1]==='כותרת'){ cur = {title: mm[2]}; }
+      else if(mm[1]==='ידיעה'){ cur.item = mm[2]; }
+      else { cur.update = mm[2];
+        if(cur.item){ DRILLS.push({title: (cur.title || ('ידיעה ' + (DRILLS.length+1))).slice(0,60), item: cur.item, update: cur.update}); added++; }
+        cur = {}; }
+    });
+    renderDrillSel(true);
+    setStatus($('drillGenStatus'), added ? ('נטענו ' + added + ' ידיעות. הן ברשימה למעלה.') : 'לא מצאתי ידיעות. ודאו שיש שורות שמתחילות ב"ידיעה:" ו"עדכון:".', !added);
+  });
+
+  /* ---------- pronunciation ---------- */
+  var PRON_RULES = [
+    {cls:'n', name:'מספרים', re:/\d/, tip:'לקרוא במילים ולבדוק התאמה במין (שלושה הרוגים, שלוש נשים)'},
+    {cls:'a', name:'ראשי תיבות וקיצורים', re:/[א-ת]["״'׳][א-ת]/, tip:'להחליט מראש: לפרוש (ארצות הברית) או לקרוא כמילה (צה"ל)'},
+    {cls:'l', name:'לועזית', re:/[A-Za-z]/, tip:'שם או מונח לועזי: לבדוק הגייה מקורית'},
+    {cls:'s', name:'סימנים', re:/[%\/()\[\]&+=@–]/, tip:'סימן שלא נקרא כמו שהוא כתוב'}
+  ];
+  $('pronScan').addEventListener('click', function(){
+    var t = $('pronText').value;
+    if(!t.trim()){ setStatus($('pronStatus'), 'הדביקו טקסט קודם.', true); return; }
+    var box = $('pronMarked'); box.textContent = '';
+    var counts = PRON_RULES.map(function(){ return 0; });
+    t.split(/(\s+)/).forEach(function(tok){
+      if(!tok) return;
+      if(/^\s+$/.test(tok)){ box.appendChild(document.createTextNode(tok.indexOf('\n')>=0 ? '\n' : ' ')); return; }
+      var hit = -1;
+      for(var i=0;i<PRON_RULES.length;i++){ if(PRON_RULES[i].re.test(tok.replace(/^["״'׳]+|[.,:;!?]+$/g,''))){ hit = i; break; } }
+      if(hit < 0){ box.appendChild(document.createTextNode(tok)); return; }
+      counts[hit]++;
+      var mk = el('mark', PRON_RULES[hit].cls, tok); mk.title = PRON_RULES[hit].tip; box.appendChild(mk);
+    });
+    box.style.whiteSpace = 'pre-wrap';
+    var lg = $('pronLegend'); lg.textContent = '';
+    PRON_RULES.forEach(function(r, i){ lg.appendChild(el('mark', r.cls, r.name + ': ' + counts[i])); });
+    $('pronOut').hidden = false;
+    var tot = counts.reduce(function(a,b){ return a+b; }, 0);
+    setStatus($('pronStatus'), tot ? ('סומנו ' + tot + ' מקומות. הבדיקה המהירה לא מזהה הטעמה ושמות בעברית, בשביל זה יש את Claude.') : 'לא נמצאו מספרים, קיצורים או לועזית. עדיין כדאי להעביר ל-Claude בשביל שמות והטעמה.');
+  });
+  $('pronCopy').addEventListener('click', async function(){
+    var t = $('pronText').value.trim();
+    if(!t){ setStatus($('pronStatus'), 'הדביקו טקסט קודם.', true); return; }
+    var p = ['אתה עורך לשון ומאמן הגייה לקרייני חדשות ברדיו בישראל. הכן את הטקסט הבא לקריאה בקול באוויר.',
+      'חלק 1, "מוכן לקריאה": החזר את הטקסט המלא כשהוא:',
+      '- כל המספרים, השעות, התאריכים, האחוזים והסכומים כתובים במילים, בהתאמה הנכונה במין ובמספר לשם העצם (שלושה הרוגים, שלוש פצועות, אלפיים עשרים וחמש).',
+      '- ראשי תיבות וקיצורים פרושים כפי שקוראים אותם ברדיו (ארה"ב ← ארצות הברית; צה"ל נשאר צה"ל).',
+      '- ניקוד מלא רק על מילים שקל לטעות בהגייתן או בהטעמתן, לא על כל הטקסט.',
+      '- שמות לועזיים ושמות מקומות לא מוכרים: בתוך סוגריים מרובעים אחרי השם, תעתיק פונטי בעברית עם ההברה המוטעמת באותיות מודגשות או מסומנת בקו, למשל [מָקְ-רוֹן, טעם בסוף].',
+      'אל תשנה תוכן, סדר או ניסוח מעבר לזה.',
+      'חלק 2, "מלכודות": רשימה קצרה של כל שינוי שעשית ולמה, מקובץ לפי: מספרים ומין, קיצורים, הטעמה, שמות.',
+      'חלק 3: אם יש מקום שאתה לא בטוח בו, כתוב אותו במפורש והמלץ לבדוק מול מקור מוסמך.',
+      '', 'הטקסט:', t].join('\n');
+    var ok = await copyText(p);
+    setStatus($('pronStatus'), ok ? 'הועתק. פתחו את Claude, הדביקו ושלחו. את "חלק 1" הדביקו בשדה למטה.' : 'ההעתקה נחסמה. נסו שוב.', !ok);
+  });
+  $('pronPractice').addEventListener('click', function(){
+    var t = $('pronBack').value.trim();
+    if(!t) return;
+    $('practiceText').value = t; state.ai = null; renderCompare();
+    document.querySelector('nav.tabs button[data-tab="practice"]').click();
+    $('practiceText').scrollIntoView({behavior:'smooth', block:'center'});
+  });
+
   /* ---------- feedback ---------- */
   function buildScale(id){
     var box = $(id);
@@ -762,6 +1087,12 @@ ul.q li{margin:4px 0}
       });
       var pasted = $('anPaste').value.trim();
       if(pasted) L.push('מתוך הניתוח של Claude: ' + pasted.slice(0, 600));
+    }
+    if($('qAttach').checked && drill.results.length){
+      L.push('מבזק מתעדכן:');
+      drill.results.forEach(function(r){
+        L.push('- ' + r.title + ': ' + (r.updAt==null ? 'סיים לפני העדכון' : ('עדכון אחרי ' + fmt(r.updAt) + ' ש׳' + (r.react ? ', שתיקה ' + fmt(r.react.len) + ' ש׳' : r.metrics ? ', בלי שתיקה בולטת' : ''))));
+      });
     }
     L.push('מכשיר: ' + (/iPhone|iPad/.test(navigator.userAgent) ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'מחשב'));
     return L.join('\n');
