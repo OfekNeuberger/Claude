@@ -225,12 +225,16 @@ ul.q li{margin:4px 0}
         <div style="flex:1 1 180px"><label class="f" for="songArtist" style="margin-top:0">אמן</label><input type="text" id="songArtist"></div>
         <div style="flex:0 0 120px"><label class="f" for="songRamp" style="margin-top:0">רמפה (שניות)</label><input type="number" id="songRamp" min="3" max="60" step="1" inputmode="numeric"></div>
       </div>
-      <label class="f" for="songFacts">פרטים אמיתיים שאפשר להזכיר (אופציונלי)</label>
-      <textarea id="songFacts" style="min-height:64px" placeholder="למשל: שנת יציאה, אלבום, אירוע קשור. Claude יתבקש להשתמש רק במה שכתוב כאן."></textarea>
+      <label class="f" for="myDraft">מה אתם רוצים להגיד (אופציונלי)</label>
+      <textarea id="myDraft" style="min-height:80px" placeholder="טיוטה, רעיון, או כמה מילים. למשל: משהו על זה שהשיר הזה תמיד מזכיר לי נסיעות בקיץ"></textarea>
+      <label class="f" for="songFacts">פרטים שאתם כבר יודעים על השיר (אופציונלי)</label>
+      <textarea id="songFacts" style="min-height:64px" placeholder="למשל: שנת יציאה, אלבום, אירוע קשור"></textarea>
+      <label class="check"><input type="checkbox" id="addFacts" checked> ש-Claude יוסיף עוד פרטים מעניינים על השיר והאמן</label>
       <div class="row" style="margin-top:10px">
-        <button class="btn" id="genIntro">העתק בקשה ל-Claude: 3 הקדמות</button>
+        <button class="btn" id="genIntro">העתק בקשה ל-Claude</button>
         <span class="small" id="budget"></span>
       </div>
+      <p class="hint" style="margin-top:6px">עם טיוטה: Claude ישמור על מה שכתבתם ועל הסגנון שלכם, ויחזק אותו. בלי טיוטה: הוא יכתוב 3 הקדמות בסגנונות שונים.</p>
       <p class="status" id="genStatus"></p>
     </div>
 
@@ -705,15 +709,26 @@ ul.q li{margin:4px 0}
   $('genIntro').addEventListener('click', async function(){
     var title = $('songTitle').value.trim(), artist = $('songArtist').value.trim();
     if(!title || !artist){ setStatus($('genStatus'), 'מלאו שם שיר ואמן.', true); return; }
-    var facts = $('songFacts').value.trim();
-    var prompt = [
-      'כתוב 3 הקדמות קצרות לשיר לשידור ברדיו בעברית, בסגנונות שונים: קליל, ענייני, חם ואישי.',
-      'כל הקדמה חייבת להיות עד ' + budgetWords() + ' מילים, כי הרמפה היא ' + rampSec() + ' שניות. עברית דיבורית, בלי כוכביות או סימונים.',
+    var facts = $('songFacts').value.trim(), draft = $('myDraft').value.trim(), add = $('addFacts').checked;
+    var L = ['אתה עורך מוזיקלי ותיק ברדיו בישראל. אני קריין ומתאמן על הקדמה לשיר.',
       'שם השיר: ' + title + '. אמן: ' + artist + '.',
-      facts ? ('פרטים שנמסרו, ורק אותם מותר להזכיר: ' + facts) : 'לא נמסרו פרטים נוספים: כתוב הקדמה כללית שמזכירה רק את שם השיר והאמן.',
-      'אסור להמציא עובדה על השיר או על האמן.',
-      'אחרי ההקדמות, רשום עד 5 שמות או מונחים שעלולים להיות קשים להגייה (במיוחד לועזיים), עם הערת הגייה בעברית.'
-    ].join('\n');
+      'הרמפה (מתחילת המוזיקה עד כניסת השירה) היא ' + rampSec() + ' שניות, ולכן כל הקדמה חייבת להיות עד ' + budgetWords() + ' מילים. עברית דיבורית, בלי כוכביות או סימונים.'];
+    if(facts) L.push('פרטים שאני כבר יודע: ' + facts);
+    if(draft){
+      L.push('זה מה שאני רוצה להגיד, במילים שלי:\n"' + draft + '"');
+      L.push('שמור על הרעיון, על הקול ועל הסגנון שלי. אל תחליף אותי בטקסט אחר: חזק את מה שכתבתי, הדק אותו לתקציב המילים, ותן לו סיום שמוביל טבעי לכניסת השירה.');
+      L.push('תן 2 גרסאות: אחת קרובה מאוד למה שכתבתי, ואחת שמוסיפה פרט אחד מעניין.');
+    } else {
+      L.push('כתוב 3 הקדמות בסגנונות שונים: קליל, ענייני, חם ואישי.');
+    }
+    if(add){
+      L.push('הוסף פרטים מעניינים ואמיתיים על השיר או על האמן שקריין יכול לשלב (למשל רקע לכתיבה, שנה, אלבום, הצלחה, סיפור קטן). אם יש לך חיפוש באינטרנט, השתמש בו לאמת.');
+      L.push('אחרי ההקדמות, רשום בנפרד 3 עד 5 פרטים כאלה, ולכל אחד כתוב עד כמה אתה בטוח בו (בטוח / כדאי לבדוק). אל תמציא: אם אינך יודע משהו בוודאות, אמור את זה.');
+    } else {
+      L.push('אל תוסיף עובדות על השיר או על האמן מעבר למה שכתבתי.');
+    }
+    L.push('בסוף, רשום עד 5 שמות או מונחים שעלולים להיות קשים להגייה (במיוחד לועזיים), עם הערת הגייה בעברית.');
+    var prompt = L.join('\n');
     var ok = await copyText(prompt);
     setStatus($('genStatus'), ok ? 'הועתק. הדביקו ב-Claude, ואת ההקדמה שבחרתם הדביקו למטה ותתאמנו מול השעון.' : 'ההעתקה נחסמה. נסו שוב.', !ok);
   });
