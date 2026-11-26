@@ -136,6 +136,11 @@ mark{border-radius:4px;padding:0 3px;color:inherit}
 mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} mark.l{background:rgba(169,106,7,.22)} mark.s{background:rgba(86,103,114,.25)}
 .legend{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px;font-size:13px}
 .legend mark{padding:2px 8px}
+.diff{line-height:2;font-size:17px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px}
+.diff .miss,.legend .miss{text-decoration:line-through;color:var(--mute)}
+.diff .extra,.legend .extra{color:var(--warn);font-weight:700}
+.diff .rep,.legend .rep{color:var(--bad);font-weight:700;text-decoration:underline wavy}
+.legend span{margin-inline-end:10px}
 .linkbtn{text-decoration:none;display:inline-flex;align-items:center}
 </style>
 </head>
@@ -184,6 +189,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
           <div class="meter" aria-hidden="true"><i id="meterFill"></i></div>
         </div>
       </div>
+      <label class="check" id="asrRow"><input type="checkbox" id="useAsr" checked> לתמלל תוך כדי, כדי לתפוס טעויות, מילים חסרות וחזרות</label>
       <p class="status" id="recStatus"></p>
       <audio id="player" controls playsinline hidden></audio>
 
@@ -207,6 +213,13 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
         <button class="btn alt" id="aiStop">עצור</button>
       </div>
       <p class="status" id="aiStatus"></p>
+      <div id="diffBox" hidden>
+        <h3 style="margin-top:14px">מה נשמע מול הטקסט</h3>
+        <p class="legend"><span class="miss">קו חוצה: לא נשמע</span><span class="extra">כתום: נוסף או הוחלף</span><span class="rep">אדום: חזרה</span></p>
+        <div class="diff" id="diff"></div>
+        <p class="small" id="diffSum"></p>
+        <p class="metric-note">התמלול אוטומטי. הוא כותב מספרים בספרות (12 במקום "שתים עשרה"), ולפעמים מפספס מילה שנאמרה חלש או "מנקה" היסוס. חזרה שמופיעה כאן היא כמעט תמיד חזרה אמיתית.</p>
+      </div>
       <p class="metric-note">קצב נמדד בין תחילת הדיבור לסופו. הפסקה היא שקט של יותר מ-0.35 שניות. דינמיקה היא הפער בדציבלים בין החלקים השקטים לחזקים. מנגינה היא טווח גובה הקול בחצאי טונים. אצל ה-AI נמדד רק משך ההשמעה.</p>
     </div>
 
@@ -224,7 +237,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
 
     <div class="card">
       <h3>הניסיונות שלך</h3>
-      <div class="scroll"><table><thead><tr><th>#</th><th>משך</th><th>מילים לדקה</th><th>הפסקות</th><th>מנגינה</th><th>דינמיקה</th></tr></thead><tbody id="takesBody"></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>#</th><th>משך</th><th>מילים לדקה</th><th>הפסקות</th><th>מנגינה</th><th>דינמיקה</th><th>דיוק</th></tr></thead><tbody id="takesBody"></tbody></table></div>
     </div>
   </section>
 
@@ -571,9 +584,95 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     var tb = $('takesBody'); tb.textContent = '';
     state.takes.forEach(function(t, i){
       var m = t.metrics;
-      tb.appendChild(row([String(i+1), fmt(m.dur), fmt(m.wpm,0), String(m.pauseCount), m.pitchRange!=null?fmt(m.pitchRange):'—', fmt(m.dyn,0)]));
+      tb.appendChild(row([String(i+1), fmt(m.dur), fmt(m.wpm,0), String(m.pauseCount), m.pitchRange!=null?fmt(m.pitchRange):'—', fmt(m.dyn,0), t.align ? fmt(t.align.accuracy,0)+'%' : '—']));
     });
-    if(!state.takes.length) tb.appendChild(row(['—','עוד אין הקלטות','','','','']));
+    if(!state.takes.length) tb.appendChild(row(['—','עוד אין הקלטות','','','','','']));
+  }
+
+  /* ---------- speech recognition (browser, Hebrew) ---------- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var asr = {r:null, on:false, finals:[], interim:'', err:null, t0:0, done:null};
+  if(!SR){ $('asrRow').hidden = true; }
+  function asrJoined(){ return asr.finals.map(function(f){ return f.text; }).join(' ').replace(/\s+/g,' ').trim(); }
+  function asrStart(){
+    asr.finals = []; asr.interim = ''; asr.err = null; asr.on = false;
+    if(!SR || !$('useAsr').checked) return;
+    try{
+      var r = new SR();
+      r.lang = 'he-IL'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+      r.onresult = function(e){
+        var interim = '';
+        for(var i=e.resultIndex; i<e.results.length; i++){
+          var res = e.results[i], txt = String(res[0] && res[0].transcript || '');
+          if(res.isFinal){
+            var prev = asrJoined(), t = txt.trim();
+            /* some Safari versions repeat everything said so far in each result */
+            if(prev && t.indexOf(prev) === 0) t = t.slice(prev.length).trim();
+            if(t) asr.finals.push({t: (performance.now()-asr.t0)/1000, text: t});
+          } else interim += txt;
+        }
+        asr.interim = interim.trim();
+      };
+      r.onerror = function(e){ asr.err = e.error || 'error'; };
+      r.onend = function(){
+        if(asr.on && !asr.err){ try{ r.start(); return; }catch(x){} }
+        asr.on = false; if(asr.done){ var d = asr.done; asr.done = null; d(); }
+      };
+      asr.r = r; asr.on = true; asr.t0 = performance.now();
+      r.start();
+    }catch(e){ asr.err = 'start'; asr.on = false; }
+  }
+  function asrStop(){
+    return new Promise(function(res){
+      if(!asr.r || !asr.on){ res(); return; }
+      asr.on = false;
+      var timer = setTimeout(function(){ asr.done = null; res(); }, 1800);
+      asr.done = function(){ clearTimeout(timer); res(); };
+      try{ asr.r.stop(); }catch(e){ clearTimeout(timer); res(); }
+    }).then(function(){
+      if(asr.interim){ asr.finals.push({t:(performance.now()-asr.t0)/1000, text: asr.interim}); asr.interim = ''; }
+      var tx = {text: asrJoined(), pieces: asr.finals.slice(), err: asr.err};
+      asr.r = null;
+      return tx;
+    });
+  }
+  function norm(w){ return String(w).replace(/[\u0591-\u05C7]/g,'').replace(/[^\u05D0-\u05EAa-zA-Z0-9]/g,''); }
+  var NUMW = /^[ובלמשה]?(אחת|אחד|שתיים|שתים|שניים|שנים|שני|שתי|שלוש|שלושה|שלושת|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה|עשרים|שלושים|ארבעים|חמישים|שישים|שבעים|שמונים|תשעים|מאה|מאות|מאתיים|אלף|אלפים|אלפיים|מיליון|מיליארד|אחוז|אחוזים)$/;
+  function alignWords(src, hyp){
+    var A = src.match(/\S+/g)||[], B = hyp.match(/\S+/g)||[];
+    var a = A.map(norm), b = B.map(norm), n = a.length, m = b.length, L = [];
+    for(var i=0;i<=n;i++) L.push(new Uint16Array(m+1));
+    for(var i2=n-1;i2>=0;i2--) for(var j=m-1;j>=0;j--) L[i2][j] = (a[i2] && a[i2]===b[j]) ? L[i2+1][j+1]+1 : Math.max(L[i2+1][j], L[i2][j+1]);
+    var ops = [], x=0, y=0, hit=0, lastSaid = '';
+    while(x<n || y<m){
+      if(x<n && y<m && a[x] && a[x]===b[y]){ ops.push({t:'ok', w:A[x]}); lastSaid = b[y]; x++; y++; hit++; }
+      else if(y<m && (x>=n || L[x][y+1] >= L[x+1][y])){
+        var isRep = b[y] && (b[y] === lastSaid || (y+1<m && b[y] === b[y+1]));
+        ops.push({t: isRep ? 'rep' : 'extra', w:B[y]}); lastSaid = b[y]; y++;
+      }
+      else { ops.push({t:'miss', w:A[x]}); x++; }
+    }
+    /* digits in the transcript vs number words in the text are the same thing said aloud */
+    ops.forEach(function(o, k){
+      if(o.t==='extra' && /\d/.test(o.w)) o.t = 'num';
+    });
+    ops.forEach(function(o, k){
+      if(o.t!=='miss' || !NUMW.test(norm(o.w))) return;
+      for(var d=-4; d<=4; d++){ var q = ops[k+d]; if(q && q.t==='num'){ o.t = 'numw'; hit++; return; } }
+    });
+    function pick(t){ return ops.filter(function(o){ return o.t===t; }).map(function(o){ return o.w; }); }
+    return {ops: ops, accuracy: n ? Math.min(100, hit/n*100) : 0, missing: pick('miss'), extra: pick('extra'), repeats: pick('rep')};
+  }
+  function renderDiff(t){
+    if(!t || !t.transcript){ $('diffBox').hidden = true; return; }
+    var box = $('diff'); box.textContent = '';
+    t.align.ops.forEach(function(o){
+      if(o.t==='num') return;
+      box.appendChild(el('span', (o.t==='ok' || o.t==='numw') ? '' : o.t, o.w)); box.appendChild(document.createTextNode(' '));
+    });
+    var al = t.align;
+    $('diffSum').textContent = 'התאמה ' + fmt(al.accuracy,0) + '%. לא נשמעו: ' + al.missing.length + '. נוספו או הוחלפו: ' + al.extra.length + '. חזרות: ' + al.repeats.length + '.';
+    $('diffBox').hidden = false;
   }
 
   /* ---------- recording (raw PCM, works in iPhone Safari) ---------- */
@@ -610,6 +709,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     /* create the audio context inside the tap so iOS lets it run */
     var ctx = new Ctx();
     rec.ctx = ctx; rec.chunks = []; rec.level = 0; rec.ui = ui; rec.onStop = onStop;
+    if(ui.asr) asrStart();
     ui.btn.disabled = true;
     md.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}}).then(function(stream){
       rec.stream = stream;
@@ -633,6 +733,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
       drawLive();
     }).catch(function(e){
       cleanupRec(); ui.btn.disabled = false;
+      if(asr.on) asrStop();
       var name = (e && e.name) || '';
       var msg = (name==='NotAllowedError') ? 'לא ניתנה גישה למיקרופון. באייפון: הגדרות ← ספארי ← מיקרופון ← "שאל" או "אפשר", ואז רעננו ונסו שוב.'
               : (name==='NotFoundError') ? 'לא נמצא מיקרופון במכשיר.'
@@ -651,15 +752,16 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     var pcm = new Float32Array(len), off = 0;
     chunks.forEach(function(c){ pcm.set(c, off); off += c.length; });
     setStatus(u.status, 'מנתח…');
+    var tx = u.asr ? await asrStop() : null;
     await new Promise(function(r){ setTimeout(r, 30); });
-    if(cb) cb(pcm, sr);
+    if(cb) cb(pcm, sr, tx);
   }
-  var practiceUI = {btn: $('recBtn'), clock: $('clock'), meter: $('meterFill'), status: $('recStatus')};
+  var practiceUI = {btn: $('recBtn'), clock: $('clock'), meter: $('meterFill'), status: $('recStatus'), asr: true};
   $('recBtn').addEventListener('click', function(){
     if(rec.on){ if(rec.ui === practiceUI) recStop(); return; }
-    recStart(practiceUI, function(pcm, sr){
+    recStart(practiceUI, function(pcm, sr, tx){
       $('player').src = URL.createObjectURL(toWav(pcm, sr)); $('player').hidden = false;
-      finishTake(pcm, sr);
+      finishTake(pcm, sr, tx);
     });
   });
   function toWav(pcm, sr){
@@ -671,7 +773,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     for(var i=0;i<pcm.length;i++){ var s = Math.max(-1, Math.min(1, pcm[i])); v.setInt16(44+i*2, s<0 ? s*0x8000 : s*0x7FFF, true); }
     return new Blob([buf], {type:'audio/wav'});
   }
-  function finishTake(pcm, sr){
+  function finishTake(pcm, sr, tx){
     var src = $('practiceText').value, metrics;
     try{ metrics = analyzePCM(pcm, sr, words(src)); }
     catch(e){
@@ -679,11 +781,14 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
               : (e && e.code==='short') ? 'ההקלטה קצרה מדי.' : 'לא הצלחתי לנתח את ההקלטה. נסו שוב.';
       setStatus($('recStatus'), msg, true); return;
     }
-    var take = {source: src, metrics: metrics, when: new Date().toISOString()};
+    var take = {source: src, metrics: metrics, when: new Date().toISOString(), transcript: '', pieces: [], align: null};
+    if(tx && tx.text){ take.transcript = tx.text; take.pieces = tx.pieces; take.align = alignWords(src, tx.text); }
     state.take = take; state.takes.push(take);
-    setStatus($('recStatus'), 'הקלטה ' + state.takes.length + ' נותחה. עכשיו: "העתק ל-Claude".');
+    var note = '';
+    if(tx && !tx.text) note = tx.err === 'not-allowed' || tx.err === 'service-not-allowed' ? ' התמלול לא אושר (מאשרים "זיהוי דיבור" בהגדרות).' : ' התמלול לא קלט מילים הפעם, אז אין בדיקת טעויות.';
+    setStatus($('recStatus'), 'הקלטה ' + state.takes.length + ' נותחה. עכשיו: "העתק ל-Claude".' + note);
     setStatus($('anStatus'), '');
-    renderCompare(); renderTakes(); updateEstimate();
+    renderCompare(); renderTakes(); renderDiff(take); updateEstimate();
   }
   $('myFile').addEventListener('change', async function(e){
     var f = e.target.files && e.target.files[0];
@@ -693,7 +798,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     try{
       var a = await decodeFile(f);
       $('player').src = URL.createObjectURL(f); $('player').hidden = false;
-      finishTake(a.ch, a.sr);
+      finishTake(a.ch, a.sr, null);
     }catch(err){ setStatus($('recStatus'), 'הקובץ לא נקרא. נסו m4a, mp3 או wav.', true); }
     $('myFile').value = '';
   });
@@ -730,6 +835,18 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
       L.push((i+1) + '. start ' + p.start + ', dur ' + p.dur + ', pitch ' + p.pitch + ', range ' + p.pitchRange + ', endMove ' + p.endMove + ', loud ' + p.loud);
     });
     L.push('\nהפסקות (at = זמן תחילת ההפסקה, len = אורך): ' + (m.pauses.length ? m.pauses.slice(0,40).map(function(p){ return 'at ' + p.at + ' len ' + p.len; }).join('; ') : 'אין'));
+    if(t.transcript){
+      L.push('\nתמלול אוטומטי של מה שהקריין אמר בפועל (זיהוי דיבור של הדפדפן), בקטעים עם זמן (שניות מתחילת ההקלטה):');
+      t.pieces.slice(0,80).forEach(function(p){ L.push('[' + fmt(p.t) + '] ' + p.text); });
+      var al = t.align;
+      L.push('השוואה מילה במילה לטקסט: התאמה ' + fmt(al.accuracy,0) + '%.');
+      L.push('מילים מהטקסט שלא הופיעו בתמלול: ' + (al.missing.join(', ') || 'אין'));
+      L.push('מילים שנוספו או הוחלפו: ' + (al.extra.join(', ') || 'אין'));
+      L.push('מילים שנאמרו פעמיים (חזרה): ' + (al.repeats.join(', ') || 'אין'));
+      L.push('הטקסט כפי שנשמע, מסומן (מספרים שנכתבו בספרות בתמלול הוסרו מההשוואה): ' + al.ops.filter(function(o){ return o.t!=='num'; }).map(function(o){ return (o.t==='ok' || o.t==='numw') ? o.w : o.t==='miss' ? '[חסר:' + o.w + ']' : o.t==='rep' ? '[חזרה:' + o.w + ']' : '[נוסף:' + o.w + ']'; }).join(' '));
+    } else {
+      L.push('\nאין תמלול של מה שנאמר, ולכן אי אפשר לבדוק טעויות קריאה, השמטות או חזרות. אל תעריך דיוק.');
+    }
     if(state.ai) L.push('\nלהשוואה, קול AI קרא את אותו טקסט ב-' + fmt(state.ai.dur) + ' שניות (' + fmt(state.ai.wpm,0) + ' מילים לדקה).');
     var idx = state.takes.indexOf(t), prev = idx > 0 ? state.takes[idx-1] : null;
     if(prev) L.push('\nהקלטה קודמת של אותו קריין: ' + fmt(prev.metrics.wpm,0) + ' מילים לדקה, ' + prev.metrics.pauseCount + ' הפסקות, טווח מנגינה ' + fmt(prev.metrics.pitchRange) + ', דינמיקה ' + fmt(prev.metrics.dyn,0) + ' dB. התייחס בקצרה לשינוי.');
@@ -738,20 +855,22 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
   function analysisPrompt(t){
     return [
       'אתה מאמן קריינות ותיק ברדיו ובפרסומות בישראל. נתח את הקריאה הבאה כקריינות: לא כנאום ולא כשיחה, אלא כקריאה לאוויר.',
-      'לא שמעת את הקול. קיבלת מדידה אקוסטית מפורטת ואת הטקסט. תשתמש בזה כדי להסיק דברים קונקרטיים:',
+      'לא שמעת את הקול. קיבלת את הטקסט, מדידה אקוסטית מפורטת, ולרוב גם תמלול של מה שנאמר בפועל. תשתמש בזה כדי להסיק דברים קונקרטיים:',
       '- התאם את קטעי הדיבור לטקסט לפי הזמנים, מספר המילים והפיסוק, וציין איפה בטקסט ההפסקות כנראה נפלו ביחס לפסיקים ולנקודות (הפסקה טובה נופלת על פיסוק או לפני מידע חשוב; הפסקה באמצע צירוף שוברת את המשפט).',
       '- סופי משפטים: ירידה ברורה (endMove שלילי) בנקודה נשמעת סמכותית; עלייה או שטוח בסוף משפט נשמע כמו שאלה או חוסר סיום.',
       '- מנגינה: טווח צר מאוד (פחות מ-4 חצאי טונים) נוטה למונוטוני; טווח רחב מאוד יכול להישמע מוגזם. אלה כללי אצבע, לא חוק.',
       '- קצב: לקריינות חדשות ומזג אוויר בעברית טווח נוח הוא בערך 140 עד 170 מילים לדקה, תלוי בסגנון.',
-      'היה ספציפי: צטט מילים מהטקסט כשאתה מצביע על מקום. אל תמציא דברים שאי אפשר לדעת מהנתונים (חיוך, חספוס, מבטא, דיוק בהגייה).',
+      '- דיוק (אם יש תמלול): זה החלק הכי חשוב לקריין חדשות. עבור על ההשוואה לטקסט ומצא טעויות קריאה, מילים שהוחלפו, השמטות וחזרות. התמלול האוטומטי כותב מספרים בספרות ולפעמים מפספס מילה שנאמרה חלש, אז מילה "חסרה" היא חשד ולא הוכחה. חזרה או מילה שהוחלפה במילה אחרת הן כמעט תמיד טעות אמיתית. אם יש כמה טעויות, אמור את זה בבירור בשורת הפתיחה: באוויר זו הבעיה הראשונה לתקן.',
+      'היה ספציפי: צטט מילים מהטקסט כשאתה מצביע על מקום. אל תמציא דברים שאי אפשר לדעת מהנתונים (חיוך, חספוס, מבטא, הגייה מדויקת של צלילים).',
       '',
       'כתוב בעברית, בגובה העיניים, חם וישיר, קצר ומתאים לקריאה בטלפון, במבנה הזה:',
       '1. שורת פתיחה: ציון כללי מ-10 ומשפט אחד.',
-      '2. ציון מ-10 ומשפט לכל אחד: קצב, הפסקות ונשימות, מנגינה ואינטונציה, סופי משפטים, דינמיקה ודגשים.',
-      '3. מה עבד (עד 3).',
-      '4. מה לשפר (עד 4, כל אחד עם המקום בטקסט ומה לעשות).',
-      '5. שני תרגילים קונקרטיים לסבב הבא.',
-      '6. משפט קצר על מה שלא ניתן לדעת מהנתונים.',
+      '2. דיוק בטקסט: ציון מ-10, ורשימה של כל טעות שמצאת (מה היה כתוב, מה נאמר). אם אין תמלול, כתוב שלא נבדק.',
+      '3. ציון מ-10 ומשפט לכל אחד: קצב, הפסקות ונשימות, מנגינה ואינטונציה, סופי משפטים, דינמיקה ודגשים.',
+      '4. מה עבד (עד 3).',
+      '5. מה לשפר (עד 4, כל אחד עם המקום בטקסט ומה לעשות).',
+      '6. שני תרגילים קונקרטיים לסבב הבא.',
+      '7. משפט קצר על מה שלא ניתן לדעת מהנתונים.',
       '',
       takeData(t)
     ].join('\n');
@@ -895,7 +1014,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     $('drillUpdate').hidden = true;
     $('drillResult').hidden = true;
   }
-  var drillUI = {btn: $('drillBtn'), clock: null, meter: $('drillMeter'), status: $('drillStatus'),
+  var drillUI = {btn: $('drillBtn'), clock: null, meter: $('drillMeter'), status: $('drillStatus'), asr: true,
     onStart: drillBegin, onTick: function(t){ drillTick(t); }};
   function setDrillBtn(on){ $('drillBtn').classList.toggle('on', on); $('drillBtn').setAttribute('aria-label', on ? 'סיים תרגיל' : 'התחל תרגיל'); $('lamp').classList.toggle('live', on); }
   $('drillBtn').addEventListener('click', function(){
@@ -908,19 +1027,20 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
     drill.cur = pickDrill();
     $('drillSaid').value = '';
     if($('drillRec').checked){
-      recStart(drillUI, function(pcm, sr){
+      recStart(drillUI, function(pcm, sr, tx){
         var total = pcm.length/sr;
         drill.running = false;
         $('drillPlayer').src = URL.createObjectURL(toWav(pcm, sr)); $('drillPlayer').hidden = false;
-        drillDone(pcm, sr, total);
+        drillDone(pcm, sr, total, tx);
       });
     } else {
       stopAll(); setStatus($('drillStatus'), '');
       drillBegin(); setDrillBtn(true); drillLoop();
     }
   });
-  function drillDone(pcm, sr, total){
-    var d = drill.cur, r = {title: d.title, item: d.item, update: d.update, updAt: drill.updAt, total: total, metrics: null};
+  function drillDone(pcm, sr, total, tx){
+    var d = drill.cur, r = {title: d.title, item: d.item, update: d.update, updAt: drill.updAt, total: total, metrics: null,
+      transcript: tx && tx.text ? tx.text : '', pieces: tx && tx.pieces ? tx.pieces : []};
     if(pcm){
       try{ r.metrics = analyzePCM(pcm, sr, words(d.item) + (drill.updAt!=null ? words(d.update) : 0)); }catch(e){ r.metrics = null; }
     } else { $('drillPlayer').hidden = true; }
@@ -944,6 +1064,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
         li('לא הצלחתי למדוד את ההקלטה. בדקו שהמיקרופון לא חסום.');
       }
     }
+    if(r.transcript) li('מה נשמע: "' + r.transcript + '"');
     drill.last = r; drill.results.push(r);
     setStatus($('drillStatus'), '');
     $('drillResult').hidden = false;
@@ -971,6 +1092,10 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
         L.push('קצב כולל: ' + fmt(m.wpm,0) + ' מילים לדקה. הפסקות (at = שניות מתחילת הדיבור, len = אורך): ' + m.pauses.map(function(p){ return 'at ' + p.at + ' len ' + p.len; }).join('; '));
         L.push('קטעי דיבור (start, dur, endMove = תנועת גובה בסוף הקטע בחצאי טונים, שלילי = ירידה): ' + m.phrases.map(function(p){ return '[' + p.start + ', ' + p.dur + ', ' + p.endMove + ']'; }).join(' '));
       }
+    }
+    if(r.transcript){
+      L.push('תמלול אוטומטי של מה שהקריין אמר בפועל, בקטעים עם זמן (שניות מתחילת ההקלטה). השתמש בו כדי לראות בדיוק איך הוא עבר לעדכון, ואם טעה, השמיט או חזר על מילים. התמלול כותב מספרים בספרות ולפעמים מפספס מילה שנאמרה חלש:');
+      r.pieces.forEach(function(p){ L.push('[' + fmt(p.t) + '] ' + p.text); });
     }
     var said = $('drillSaid').value.trim();
     if(said) L.push('לדברי הקריין, כשהעדכון הגיע הוא אמר: "' + said + '"');
@@ -1083,7 +1208,7 @@ mark.n{background:rgba(214,58,47,.18)} mark.a{background:rgba(15,118,110,.2)} ma
       L.push('תוצאות:');
       state.takes.forEach(function(t, i){
         var m = t.metrics;
-        L.push('- הקלטה ' + (i+1) + ': ' + fmt(m.dur) + ' ש׳, ' + fmt(m.wpm,0) + ' מילים לדקה, ' + m.pauseCount + ' הפסקות, מנגינה ' + fmt(m.pitchRange) + ', דינמיקה ' + fmt(m.dyn,0) + ' dB');
+        L.push('- הקלטה ' + (i+1) + ': ' + fmt(m.dur) + ' ש׳, ' + fmt(m.wpm,0) + ' מילים לדקה, ' + m.pauseCount + ' הפסקות, מנגינה ' + fmt(m.pitchRange) + ', דינמיקה ' + fmt(m.dyn,0) + ' dB' + (t.align ? ', דיוק ' + fmt(t.align.accuracy,0) + '%, חזרות ' + t.align.repeats.length : ''));
       });
       var pasted = $('anPaste').value.trim();
       if(pasted) L.push('מתוך הניתוח של Claude: ' + pasted.slice(0, 600));
